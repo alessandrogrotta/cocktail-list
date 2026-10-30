@@ -1,0 +1,81 @@
+services:
+  cocktail-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cocktail-java-app
+    depends_on:
+      mysql:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      - JAVA_OPTS=-Xmx512m -Xms256m
+      - KEYCLOAK_ISSUER_URI=http://keycloak:8081/realms/cocktail-realm
+      - KEYCLOAK_SERVER_URL=http://keycloak:8081
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/init
+      - SPRING_DATASOURCE_USERNAME=cocktail_user
+      - SPRING_DATASOURCE_PASSWORD=cocktail_pass
+    networks:
+      - cocktail-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/cocktails"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # MySQL database
+  mysql:
+    image: mysql:8.0
+    container_name: cocktail-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=init
+      - MYSQL_USER=cocktail_user
+      - MYSQL_PASSWORD=cocktail_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    networks:
+      - cocktail-network
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: keycloak
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_HTTP_PORT=8081
+    command:
+      - start-dev
+      - --http-port=8081
+      - --import-realm
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./keycloak/realm-export:/opt/keycloak/data/import
+      - keycloak_data:/opt/keycloak/data
+    networks:
+      - cocktail-network
+    restart: unless-stopped
+
+networks:
+  cocktail-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  keycloak_data:
